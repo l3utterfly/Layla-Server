@@ -1,0 +1,25 @@
+{
+  "name": "layla-server",
+  "version": "1.0.0",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc && tsc -p tsconfig.renderer.json && yarn build:renderer",
+    "start": "yarn build && electron .",
+    "build:renderer": "esbuild src/renderer.tsx --bundle --outfile=dist/renderer.js --platform=browser --target=es2020 --loader:.tsx=tsx"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "electron": "^41.2.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  }
+}
