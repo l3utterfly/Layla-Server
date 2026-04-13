@@ -2,24 +2,66 @@
   "name": "layla-server",
   "version": "1.0.0",
   "main": "dist/main.js",
+  "author": "l3utterfly",
+  "description": "Layla server is a thin wrapper around llama-server (or any other server for that matter) that proxies OpenAI compatible requests through WebRTC to allow connection to your PC from anywhere using the Layla app.",
   "scripts": {
     "build": "tsc && tsc -p tsconfig.renderer.json && yarn build:renderer",
     "start": "yarn build && electron .",
-    "build:renderer": "esbuild src/renderer.tsx --bundle --outfile=dist/renderer.js --platform=browser --target=es2020 --loader:.tsx=tsx"
+    "build:renderer": "esbuild src/renderer.tsx --bundle --outfile=dist/renderer.js --platform=browser --target=es2020 --loader:.tsx=tsx",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "predist": "yarn build",
+    "dist": "electron-builder --win"
   },
   "license": "MIT",
   "devDependencies": {
+    "@electron-forge/cli": "^7.11.1",
+    "@electron-forge/maker-deb": "^7.11.1",
+    "@electron-forge/maker-rpm": "^7.11.1",
+    "@electron-forge/maker-squirrel": "^7.11.1",
+    "@electron-forge/maker-wix": "^7.11.1",
+    "@electron-forge/maker-zip": "^7.11.1",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
+    "@electron-forge/plugin-fuses": "^7.11.1",
+    "@electron/fuses": "^1.8.0",
     "@types/node": "^25.6.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
+  },
+  "build": {
+    "appId": "com.layla.laylaserver",
+    "productName": "Layla Server",
+    "files": [
+      "dist/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "./assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "extraResources": [
+      {
+        "from": "./assets/server",
+        "to": "server",
+        "filter": ["**/*"]
+      }
+    ]
   }
 }

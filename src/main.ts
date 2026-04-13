@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from "electron";
 import * as path from "path";
 import os from 'os';
 import { spawn, exec, ChildProcess } from "child_process";
@@ -6,7 +6,10 @@ import { spawn, exec, ChildProcess } from "child_process";
 let mainWindow: BrowserWindow | null = null;
 const isWindows = process.platform === "win32";
 
+
 function createWindow(): void {
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 600,
     height: 1000,
@@ -15,6 +18,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
     },
+    icon: path.join(__dirname, 'assets/icon.png'),
   });
 
   mainWindow.loadFile(path.join(__dirname, "../public/index.html"));
@@ -63,6 +67,10 @@ ipcMain.handle("dialog:openFile", async () => {
 
   if (canceled || filePaths.length === 0) return null;
   return filePaths[0];
+});
+
+ipcMain.on("open-external", (_event, url: string) => {
+  shell.openExternal(url);
 });
 
 let serverProcess: ChildProcess | null = null;

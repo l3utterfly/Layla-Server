@@ -24,7 +24,7 @@ export const USER_SETTING_DEFAULTS: {
 } = {
   [UserSettingKey.LOCAL_SERVER_URL]: 'http://127.0.0.1:8080/v1/chat/completions',
   [UserSettingKey.MODEL_PATH]: null,
-  [UserSettingKey.LOCAL_SERVER_PATH]: '.\\server\\llama-server.exe',
+  [UserSettingKey.LOCAL_SERVER_PATH]: './resources/server/llama-server.exe',
   [UserSettingKey.ADDITIONAL_SERVER_CMD_ARGS]: null,
   [UserSettingKey.SERVER_SECRET_KEY]: generatePassword(),
 };

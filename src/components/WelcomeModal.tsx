@@ -65,7 +65,11 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   const handleDownload = (url: string) => {
-    window.open(url, "_blank");
+    try {
+        window.electronBridge.openExternal(url);
+    } catch (error) {
+        console.error("Failed to open external link:", error);
+    }
   };
 
   const handlePickFile = async () => {

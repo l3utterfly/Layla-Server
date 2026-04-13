@@ -1,5 +1,6 @@
 export interface ElectronAPI {
   getAppVersion: () => Promise<string>;
+  openExternal: (url: string) => void;
   openFileDialog: () => Promise<string | null>;
   startServer: (serverPath: string, modelPath: string, additionalArgs: string) => Promise<void>;
   stopServer: () => Promise<void>;
