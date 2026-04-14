@@ -2,7 +2,7 @@
   "name": "layla-server",
   "version": "1.0.1",
   "main": "dist/main.js",
-  "author": "l3utterfly",
+  "author": "Layla Network Pty Ltd",
   "description": "Layla server is a thin wrapper around llama-server (or any other server for that matter) that proxies OpenAI compatible requests through WebRTC to allow connection to your PC from anywhere using the Layla app.",
   "scripts": {
     "build": "tsc && tsc -p tsconfig.renderer.json && yarn build:renderer",
