@@ -632,6 +632,7 @@ interface SettingsPageProps {
 }
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
+  const [version, setVersion] = useState<string>('1.0.0');
   const [settings, setSettings] = useState<Record<
     UserSettingKey,
     string
@@ -653,6 +654,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
       document.head.removeChild(el);
       styleInjected.current = false;
     };
+  }, []);
+
+  // get app version
+  useEffect(() => {
+    window.electronBridge.getAppVersion().then(setVersion);
   }, []);
 
   // Load settings on mount
@@ -739,7 +745,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
             Back
           </button>
           <div>
-            <h1 className="sp-heading">Settings</h1>
+            <h1 className="sp-heading">Settings&nbsp;<span style={{fontSize: 12}}>(v{version})</span></h1>
             <div className="sp-heading-sub">
               Manage server configuration and model preferences
             </div>

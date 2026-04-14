@@ -25,7 +25,7 @@ const C = {
   successGlow: "rgba(52, 211, 153, 0.20)",
 };
 
-export const LAYLA_API_URL = "https://api.layla-network.ai";
+export const LAYLA_SIGNALLING_URL = "https://layla-signalling-production.up.railway.app";
 const WEBRTC_DATA_CHANNEL_LABEL = "layla-datachannel";
 const CHUNK_SIZE = 16_000;
 
@@ -572,7 +572,7 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
       return;
     }
 
-    const response = await fetch(`${LAYLA_API_URL}/rtc/submit-offer`, {
+    const response = await fetch(`${LAYLA_SIGNALLING_URL}/rtc/submit-offer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ secret, payload }),
@@ -616,7 +616,7 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
         if (pollingMutexRef.current) return;
         pollingMutexRef.current = true;
 
-        const response = await fetch(`${LAYLA_API_URL}/rtc/get-answer`, {
+        const response = await fetch(`${LAYLA_SIGNALLING_URL}/rtc/get-answer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ secret }),

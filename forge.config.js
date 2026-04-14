@@ -9,38 +9,38 @@ module.exports = {
   },
   rebuildConfig: {},
   makers: [
-    {
-      name: '@electron-forge/maker-squirrel',
-      config: {
-        iconUrl: 'https://r2-assets.layla-cloud.com/images/layla_server.ico',
-        setupIcon: './assets/icon.ico',
-      },
-    },
-    {
-      name: '@electron-forge/maker-zip',
-      platforms: ['darwin'],
-    },
-    {
-      name: '@electron-forge/maker-deb',
-      config: {
-        options: {
-            icon: './assets/icon.png',
-          },
-      },
-    },
-    {
-      name: '@electron-forge/maker-rpm',
-      config: {},
-    },
-    {
-      name: '@electron-forge/maker-wix',
-      config: {
-        manufacturer: 'Layla Network Pty Ltd',
-        name: 'Layla Server',
-        icon: './assets/icon.ico',
-        upgradeCode: '8c133e74-9625-495f-918a-41f41d48af51',
-      }
-    }
+    // {
+    //   name: '@electron-forge/maker-squirrel',
+    //   config: {
+    //     iconUrl: 'https://r2-assets.layla-cloud.com/images/layla_server.ico',
+    //     setupIcon: './assets/icon.ico',
+    //   },
+    // },
+    // {
+    //   name: '@electron-forge/maker-zip',
+    //   platforms: ['darwin'],
+    // },
+    // {
+    //   name: '@electron-forge/maker-deb',
+    //   config: {
+    //     options: {
+    //         icon: './assets/icon.png',
+    //       },
+    //   },
+    // },
+    // {
+    //   name: '@electron-forge/maker-rpm',
+    //   config: {},
+    // },
+    // {
+    //   name: '@electron-forge/maker-wix',
+    //   config: {
+    //     manufacturer: 'Layla Network Pty Ltd',
+    //     name: 'Layla Server',
+    //     icon: './assets/icon.ico',
+    //     upgradeCode: '8c133e74-9625-495f-918a-41f41d48af51',
+    //   }
+    // }
   ],
   plugins: [
     {
