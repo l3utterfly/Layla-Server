@@ -53,6 +53,7 @@ interface ElectronBridge {
   startServer: (
     serverPath: string,
     modelPath: string,
+    visionModelPath: string,
     additionalArgs: string,
   ) => Promise<void>;
   stopServer: () => Promise<void>;
@@ -347,6 +348,7 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
 
   // ── Settings refs ──
   const modelPathRef = useRef<string | null>(null);
+  const visionModelPathRef = useRef<string | null>(null);
   const additionalArgsRef = useRef<string | null>(null);
   const localServerPathRef = useRef<string | null>(null);
   const [serverSecret, setServerSecret] = useState("");
@@ -415,6 +417,8 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
       dc.onopen = () => {
         addLog("RTC", `DataChannel OPEN (${dc.label})`);
         addLog("RTC", "DataChannel connected!");
+
+        setStatus("Device connected, ready to stream requests");
       };
 
       dc.onclose = () => {
@@ -727,6 +731,7 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
     await getElectronBridge().startServer(
       localServerPathRef.current,
       modelPathRef.current,
+      visionModelPathRef.current || "",
       additionalArgsRef.current || "",
     );
 
@@ -771,16 +776,19 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
       UserSettingKey.ADDITIONAL_SERVER_CMD_ARGS,
       UserSettingKey.LOCAL_SERVER_PATH,
       UserSettingKey.SERVER_SECRET_KEY,
+      UserSettingKey.VISION_MODEL_PATH,
     ]);
 
     const mp = settings[UserSettingKey.MODEL_PATH];
     const aa = settings[UserSettingKey.ADDITIONAL_SERVER_CMD_ARGS];
     const lsp = settings[UserSettingKey.LOCAL_SERVER_PATH];
+    const vmp = settings[UserSettingKey.VISION_MODEL_PATH];
     const ssk = settings[UserSettingKey.SERVER_SECRET_KEY];
 
     setServerSecret(ssk);
     serverSecretRef.current = ssk;
     modelPathRef.current = mp;
+    visionModelPathRef.current = vmp;
     additionalArgsRef.current = aa;
     localServerPathRef.current = lsp;
 

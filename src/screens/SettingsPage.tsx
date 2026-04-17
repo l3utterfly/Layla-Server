@@ -66,6 +66,15 @@ const SETTING_SECTIONS: {
         placeholder: "--threads 8 --ctx-size 4096",
         tag: "CLI",
       },
+      {
+        key: UserSettingKey.SERVER_SECRET_KEY,
+        label: "Server Secret Key",
+        description:
+          "Secret key used to authenticate with the server.",
+        type: "text",
+        placeholder: "Enter your server secret key",
+        tag: "SECRET",
+      },
     ],
   },
   {
@@ -76,6 +85,13 @@ const SETTING_SECTIONS: {
         key: UserSettingKey.MODEL_PATH,
         label: "Model File",
         description: "Path to the GGUF model file on disk.",
+        type: "file",
+        tag: "GGUF",
+      },
+      {
+        key: UserSettingKey.VISION_MODEL_PATH,
+        label: "Vision Model File",
+        description: "Path to the vision model file on disk.",
         type: "file",
         tag: "GGUF",
       },

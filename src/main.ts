@@ -95,13 +95,24 @@ function killProcess(child: ChildProcess): Promise<void> {
 
 ipcMain.handle(
   "server:start",
-  async (_event, serverPath: string, modelPath: string, additionalArgs: string): Promise<string> => {
+  async (_event, serverPath: string, modelPath: string, visionModelPath: string, additionalArgs: string): Promise<string> => {
     if (serverProcess) {
       return "Server is already running";
     }
 
     return new Promise((resolve, reject) => {
-      const args = ["--model", modelPath, ...additionalArgs.split(" ").filter(Boolean)];
+      if (!serverPath || !modelPath || serverPath.trim() === "" || modelPath.trim() === "") {
+        reject("Server path and model path are required");
+        return;
+      }
+
+      let args = ["--model", modelPath];
+
+      if (visionModelPath && visionModelPath.trim() !== "") {
+        args.push("--mmproj", visionModelPath);
+      }
+
+      args = args.concat(additionalArgs.split(" ").filter(Boolean));
 
       serverProcess = spawn(serverPath, args, {
         stdio: ["ignore", "pipe", "pipe"],

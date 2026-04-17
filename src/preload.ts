@@ -10,9 +10,10 @@ contextBridge.exposeInMainWorld("electronBridge", {
     startServer: (
         serverPath: string,
         modelPath: string,
+        visionModelPath: string,
         additionalArgs: string,
     ): Promise<void> => {
-        return ipcRenderer.invoke('server:start', serverPath, modelPath, additionalArgs);
+        return ipcRenderer.invoke('server:start', serverPath, modelPath, visionModelPath, additionalArgs);
     },
 
     onServerStdout: (callback: (data: string) => void) => {
