@@ -57,7 +57,7 @@ That's it. You're now chatting with your local model from your phone.
 
 ### Option 2 — From Source
 
-**Prerequisites:** Node.js 18+ (or your runtime of choice)
+**Prerequisites:** Node.js 18+
 
 ```bash
 git clone https://github.com/your-org/Layla-Server.git
