@@ -28,6 +28,7 @@ const C = {
 export const LAYLA_SIGNALLING_URL = "https://layla-signalling-production.up.railway.app";
 const WEBRTC_DATA_CHANNEL_LABEL = "layla-datachannel";
 const CHUNK_SIZE = 16_000;
+const MAX_SERVER_LOGS_TO_DISPLAY = 500;
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -378,7 +379,7 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
 
   const addLog = (level: LogType, msg: string) => {
     const ts = generateTimestamp();
-    setLogs((prev) => [...prev.slice(-(100 - 1)), { ts, type: level, msg }]);
+    setLogs((prev) => [...prev.slice(-(MAX_SERVER_LOGS_TO_DISPLAY - 1)), { ts, type: level, msg }]);
   };
 
   // ── WebRTC (browser native) ──
