@@ -25,7 +25,8 @@ const C = {
   successGlow: "rgba(52, 211, 153, 0.20)",
 };
 
-export const LAYLA_SIGNALLING_URL = "https://layla-signalling-production.up.railway.app";
+const LAYLA_SIGNALLING_URL =
+  "https://layla-signalling-production.up.railway.app";
 const WEBRTC_DATA_CHANNEL_LABEL = "layla-datachannel";
 const CHUNK_SIZE = 16_000;
 const MAX_SERVER_LOGS_TO_DISPLAY = 500;
@@ -44,27 +45,6 @@ interface LogEntry {
   ts: string;
   type: LogType;
   msg: string;
-}
-
-// ─── IPC Bridge (Electron main process) ─────────────────────────────────────────
-// This assumes you expose these via contextBridge/preload.
-// Adjust to match your actual preload API.
-
-interface ElectronBridge {
-  startServer: (
-    serverPath: string,
-    modelPath: string,
-    visionModelPath: string,
-    additionalArgs: string,
-  ) => Promise<void>;
-  stopServer: () => Promise<void>;
-  getDeviceName: () => Promise<string>;
-  onServerLog: (callback: (log: string) => void) => () => void;
-}
-
-function getElectronBridge(): ElectronBridge {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).electronBridge as ElectronBridge;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -249,12 +229,18 @@ const LogViewer: React.FC<{ logs: LogEntry[] }> = ({ logs }) => {
 
   useEffect(() => {
     if (expanded && scrollRef.current) {
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({
-          top: scrollRef.current.scrollHeight,
-          behavior: "smooth",
-        });
-      }, 100);
+      const el = scrollRef.current;
+      const isNearBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+
+      if (isNearBottom) {
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({
+            top: scrollRef.current.scrollHeight,
+            behavior: "smooth",
+          });
+        }, 100);
+      }
     }
   }, [logs, expanded]);
 
@@ -329,9 +315,10 @@ const QrModal: React.FC<{
 
 // ─── Main Component ─────────────────────────────────────────────────────────────
 
-const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
-  goToSettings,
-}) => {
+const LlmServerPanel: React.FC<{
+  goToSettings: () => void;
+  settingsRefreshCounter: number; // used to trigger settings reload when coming back from settings page
+}> = ({ goToSettings, settingsRefreshCounter }) => {
   // ── State ──
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Idle");
@@ -379,7 +366,10 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
 
   const addLog = (level: LogType, msg: string) => {
     const ts = generateTimestamp();
-    setLogs((prev) => [...prev.slice(-(MAX_SERVER_LOGS_TO_DISPLAY - 1)), { ts, type: level, msg }]);
+    setLogs((prev) => [
+      ...prev.slice(-(MAX_SERVER_LOGS_TO_DISPLAY - 1)),
+      { ts, type: level, msg },
+    ]);
   };
 
   // ── WebRTC (browser native) ──
@@ -711,34 +701,29 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
     // it is important to update the running state immediately to avoid async function calls trying to use the old RTC connection after we've initiated shutdown
     runningRef.current = false;
 
-    await getElectronBridge().stopServer();
+    await window.electronBridge.stopServer();
   };
 
   const startServer = async () => {
-    if (!modelPathRef.current) {
-      throw new Error(
-        "Model path is not set. Please set the model path in settings.",
+    if (modelPathRef.current && localServerPathRef.current) {
+      setStatus("Starting llama.cpp server...");
+      addLog("INFO", "Starting llama.cpp server…");
+
+      await window.electronBridge.startServer(
+        localServerPathRef.current,
+        modelPathRef.current,
+        visionModelPathRef.current || "",
+        additionalArgsRef.current || "",
+      );
+    } else {
+      addLog(
+        "WARN",
+        "Model or server path is not set. Skipping LLM server start (assume another server is running).",
       );
     }
-    if (!localServerPathRef.current) {
-      throw new Error(
-        "Local server path is not set. Please set it in settings.",
-      );
-    }
-
-    setStatus("Starting llama.cpp server...");
-    addLog("INFO", "Starting llama.cpp server…");
-
-    await getElectronBridge().startServer(
-      localServerPathRef.current,
-      modelPathRef.current,
-      visionModelPathRef.current || "",
-      additionalArgsRef.current || "",
-    );
 
     runningRef.current = true;
 
-    // give it a second for the animation to finish to feel more polished
     setTimeout(() => {
       setShowQrCode(true);
     }, 1000);
@@ -769,8 +754,7 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
   // ── Load settings ──
 
   const loadSettings = async () => {
-    const bridge = getElectronBridge();
-    const computerName = await bridge.getDeviceName();
+    const computerName = await window.electronBridge.getDeviceName();
 
     const settings = await UserSettingsService.getMultipleSettings([
       UserSettingKey.MODEL_PATH,
@@ -826,6 +810,21 @@ const LlmServerPanel: React.FC<{ goToSettings: () => void }> = ({
       removeStderr();
     };
   }, []);
+
+  useEffect(() => {
+    // this logic skips the initial load when app starts
+    if (settingsRefreshCounter > 0) {
+      // reload settings (they won't be applied if the server is already running, but will be picked up on restart)
+      loadSettings()
+        .then(() => {
+          window.electronBridge.showAlert(
+            "Settings updated",
+            "Your changes have been saved. If the server is currently running, please restart it to apply the new settings.",
+          );
+        })
+        .catch((e) => addLog("ERROR", `Failed to load settings: ${e.message}`));
+    }
+  }, [settingsRefreshCounter]);
 
   // ── Init ──
 

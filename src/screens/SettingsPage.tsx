@@ -69,8 +69,7 @@ const SETTING_SECTIONS: {
       {
         key: UserSettingKey.SERVER_SECRET_KEY,
         label: "Server Secret Key",
-        description:
-          "Secret key used to authenticate with the server.",
+        description: "Secret key used to authenticate with the server.",
         type: "text",
         placeholder: "Enter your server secret key",
         tag: "SECRET",
@@ -601,11 +600,17 @@ const SettingRow: React.FC<SettingRowProps> = ({
         />
       ) : (
         <div className="sp-file-row">
-          <div
+          <input
             className={`sp-file-display ${value ? "sp-file-display--filled" : "sp-file-display--empty"}`}
-          >
-            {value || "No file selected"}
-          </div>
+            value={value}
+            onChange={(e) => onChange(meta.key, e.target.value)}
+            placeholder={meta.placeholder ?? ""}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
           <Btn label="Browse" onPress={pickFile} variant="outline" />
         </div>
       )}
@@ -635,11 +640,7 @@ const Toast: React.FC<{ message: string }> = ({ message }) => {
         ? "sp-toast--exiting"
         : "";
 
-  return (
-    <div className={`sp-toast ${animClass}`}>
-      {message}
-    </div>
-  );
+  return <div className={`sp-toast ${animClass}`}>{message}</div>;
 };
 
 // ─── Main page ──────────────────────────────────────────────────────────────────
@@ -648,7 +649,7 @@ interface SettingsPageProps {
 }
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
-  const [version, setVersion] = useState<string>('1.0.0');
+  const [version, setVersion] = useState<string>("1.0.0");
   const [settings, setSettings] = useState<Record<
     UserSettingKey,
     string
@@ -716,7 +717,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     try {
       for (const k of Object.values(UserSettingKey)) {
         const val = settings[k];
-        if (val === "" || val == null) {
+        if (val == null) {
           await UserSettingsService.removeSetting(k);
         } else {
           await UserSettingsService.saveSetting(k, val as any);
@@ -761,7 +762,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
             Back
           </button>
           <div>
-            <h1 className="sp-heading">Settings&nbsp;<span style={{fontSize: 12}}>(v{version})</span></h1>
+            <h1 className="sp-heading">
+              Settings&nbsp;<span style={{ fontSize: 12 }}>(v{version})</span>
+            </h1>
             <div className="sp-heading-sub">
               Manage server configuration and model preferences
             </div>

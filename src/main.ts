@@ -157,3 +157,12 @@ ipcMain.handle("server:stop", async (): Promise<string> => {
     return `Failed to stop server: ${err}`;
   }
 });
+
+ipcMain.handle('dialog:alert', (_event, title: string, message: string) => {
+  return dialog.showMessageBox({
+    type: 'info',
+    title: title,
+    message,
+    buttons: ['OK'],
+  });
+});

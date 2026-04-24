@@ -47,4 +47,9 @@ contextBridge.exposeInMainWorld("electronBridge", {
      * @returns the path of the selected model file, or null if the dialog was cancelled
      */
     openFileDialog: () => ipcRenderer.invoke("dialog:openFile"),
+
+    /**
+     * Show an alert dialog with a message and optional title.
+     */
+    showAlert: (title: string, message: string) => ipcRenderer.invoke('dialog:alert', title, message),
 });
