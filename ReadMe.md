@@ -42,7 +42,7 @@ Your PC has the horsepower to run large, capable models. Your phone has the conv
 
 ### Option 1 — One-Click Install (Recommended for non-technical users)
 
-Download the latest release for your platform from the [Releases page](https://github.com/your-org/layla-server/releases).
+Download the latest release for your platform from the [Releases page](https://github.com/l3utterfly/Layla-Server/releases).
 
 Layla Server ships with a bundled `llama-server` snapshot — no separate installation required (you can easily swap it out with newer versions or even different servers).
 
