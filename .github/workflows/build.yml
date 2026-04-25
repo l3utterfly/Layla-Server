@@ -27,29 +27,28 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Get latest llama.cpp release tag
+      - name: Download llama.cpp release binaries
         id: llama
         shell: bash
         run: |
-          TAG=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r '.tag_name')
+          # Fetch all asset download URLs from the latest release
+          RELEASE=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest)
+          TAG=$(echo "$RELEASE" | jq -r '.tag_name')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Latest llama.cpp release: $TAG"
 
-      - name: Download llama.cpp CUDA binaries
-        shell: bash
-        run: |
-          TAG="${{ steps.llama.outputs.tag }}"
-          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-win-cuda-13.1-x64.zip"
-          echo "Downloading $URL"
-          curl -L -o llama-cuda.zip "$URL"
+          # List all assets so we can see exact names
+          echo "$RELEASE" | jq -r '.assets[].name' | head -30
 
-      - name: Download llama.cpp CUDA runtime
-        shell: bash
-        run: |
-          TAG="${{ steps.llama.outputs.tag }}"
-          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/cudart-llama-bin-win-cuda-13.1-x64.zip"
-          echo "Downloading $URL"
-          curl -L -o llama-cudart.zip "$URL"
+          # Find and download the CUDA binary
+          CUDA_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("bin-win-cuda.*x64\\.zip$")) | select(.name | test("cudart") | not) | .browser_download_url')
+          echo "CUDA binary URL: $CUDA_URL"
+          curl -fL -o llama-cuda.zip "$CUDA_URL"
+
+          # Find and download the CUDA runtime
+          CUDART_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("cudart.*cuda.*x64\\.zip$")) | .browser_download_url')
+          echo "CUDART URL: $CUDART_URL"
+          curl -fL -o llama-cudart.zip "$CUDART_URL"
 
       - name: Extract and merge into assets/server
         shell: bash
