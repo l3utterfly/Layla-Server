@@ -1,0 +1,90 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Get latest llama.cpp release tag
+        id: llama
+        shell: bash
+        run: |
+          TAG=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r '.tag_name')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest llama.cpp release: $TAG"
+
+      - name: Download llama.cpp CUDA binaries
+        shell: bash
+        run: |
+          TAG="${{ steps.llama.outputs.tag }}"
+          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-win-cuda-13.1-x64.zip"
+          echo "Downloading $URL"
+          curl -L -o llama-cuda.zip "$URL"
+
+      - name: Download llama.cpp CUDA runtime
+        shell: bash
+        run: |
+          TAG="${{ steps.llama.outputs.tag }}"
+          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/cudart-llama-bin-win-cuda-13.1-x64.zip"
+          echo "Downloading $URL"
+          curl -L -o llama-cudart.zip "$URL"
+
+      - name: Extract and merge into assets/server
+        shell: bash
+        run: |
+          mkdir -p assets/server
+
+          # Extract CUDA binaries first
+          unzip -o llama-cuda.zip -d llama-cuda-tmp
+          # Extract CUDA runtime
+          unzip -o llama-cudart.zip -d llama-cudart-tmp
+
+          # Copy CUDA files (base layer)
+          cp -r llama-cuda-tmp/*/* assets/server/ 2>/dev/null || cp -r llama-cuda-tmp/* assets/server/
+          # Overlay CUDA runtime files (merges on top)
+          cp -r llama-cudart-tmp/*/* assets/server/ 2>/dev/null || cp -r llama-cudart-tmp/* assets/server/
+
+          echo "Contents of assets/server:"
+          ls -la assets/server/
+
+      - name: Build Electron app
+        run: yarn dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: layla-server-win
+          path: |
+            output/*.exe
+            output/*.yml
+          if-no-files-found: warn
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Layla Server Build ${{ github.run_number }}
+          files: |
+            output/*.exe
+          draft: false
+          prerelease: false
