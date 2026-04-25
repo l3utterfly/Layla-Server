@@ -41,7 +41,7 @@ jobs:
           echo "$RELEASE" | jq -r '.assets[].name' | head -30
 
           # Find and download the CUDA binary (13.1 only)
-          CUDA_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("bin-win-cuda-13\\.1-x64\\.zip$") | select(.name | test("cudart") | not) | .browser_download_url')
+          CUDA_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("bin-win-cuda-13\\.1-x64\\.zip$")) | select(.name | test("cudart") | not) | .browser_download_url')
           echo "CUDA binary URL: $CUDA_URL"
           curl -fL -o llama-cuda.zip "$CUDA_URL"
 
