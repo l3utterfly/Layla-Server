@@ -40,13 +40,13 @@ jobs:
           # List all assets so we can see exact names
           echo "$RELEASE" | jq -r '.assets[].name' | head -30
 
-          # Find and download the CUDA binary
-          CUDA_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("bin-win-cuda.*x64\\.zip$")) | select(.name | test("cudart") | not) | .browser_download_url')
+          # Find and download the CUDA binary (13.1 only)
+          CUDA_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("bin-win-cuda-13\\.1-x64\\.zip$") | select(.name | test("cudart") | not) | .browser_download_url')
           echo "CUDA binary URL: $CUDA_URL"
           curl -fL -o llama-cuda.zip "$CUDA_URL"
 
-          # Find and download the CUDA runtime
-          CUDART_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("cudart.*cuda.*x64\\.zip$")) | .browser_download_url')
+          # Find and download the CUDA runtime (13.1 only)
+          CUDART_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | test("cudart.*cuda-13\\.1-x64\\.zip$")) | .browser_download_url')
           echo "CUDART URL: $CUDART_URL"
           curl -fL -o llama-cudart.zip "$CUDART_URL"
 
