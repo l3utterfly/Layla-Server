@@ -76,8 +76,8 @@ jobs:
         with:
           name: layla-server-win
           path: |
-            output/*.exe
-            output/*.yml
+            dist/*.exe
+            dist/*.yml
           if-no-files-found: warn
 
       - name: Create GitHub Release
@@ -87,6 +87,6 @@ jobs:
           tag_name: v${{ github.run_number }}
           name: Layla Server Build ${{ github.run_number }}
           files: |
-            output/*.exe
+            dist/*.exe
           draft: false
           prerelease: false
