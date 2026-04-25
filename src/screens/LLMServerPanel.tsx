@@ -231,7 +231,7 @@ const LogViewer: React.FC<{ logs: LogEntry[] }> = ({ logs }) => {
     if (expanded && scrollRef.current) {
       const el = scrollRef.current;
       const isNearBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+        el.scrollHeight - el.scrollTop - el.clientHeight < 500;
 
       if (isNearBottom) {
         setTimeout(() => {
