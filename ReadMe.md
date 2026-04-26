@@ -128,4 +128,4 @@ The server uses **polling-based WebRTC signalling**, so it stays alive and conne
 
 ## License
 
-MIT © Layla Network Pty Ltd
+Apache 2.0 © Layla Network Pty Ltd
