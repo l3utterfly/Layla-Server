@@ -229,18 +229,12 @@ const LogViewer: React.FC<{ logs: LogEntry[] }> = ({ logs }) => {
 
   useEffect(() => {
     if (expanded && scrollRef.current) {
-      const el = scrollRef.current;
-      const isNearBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 500;
-
-      if (isNearBottom) {
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({
-            top: scrollRef.current.scrollHeight,
-            behavior: "smooth",
-          });
-        }, 100);
-      }
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      }, 100);
     }
   }, [logs, expanded]);
 
@@ -345,10 +339,8 @@ const LlmServerPanel: React.FC<{
   // ── WebRTC refs ──
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const offerPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const answerPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollingMutexRef = useRef(false);
   const lastAnswerRef = useRef<string | null>(null);
+  const creatingRtcOfferGuardRef = useRef(false); // to prevent concurrent offer creations
 
   // ── Buffered request ──
   const bufferedRequestRef = useRef("");
@@ -372,140 +364,7 @@ const LlmServerPanel: React.FC<{
     ]);
   };
 
-  // ── WebRTC (browser native) ──
-
-  const createRtcOffer = async () => {
-    try {
-      // Close existing connection if any
-      if (peerConnectionRef.current) {
-        addLog("WARN", "Existing RTC peer connection found, closing…");
-        try {
-          dataChannelRef.current?.close();
-          peerConnectionRef.current.close();
-        } catch (e: any) {
-          addLog("ERROR", `Failed to close existing peer: ${e.message}`);
-        }
-        peerConnectionRef.current = null;
-        dataChannelRef.current = null;
-      }
-
-      addLog("RTC", "Creating peer connection…");
-      setStatus("Waiting for remote connection...");
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
-      peerConnectionRef.current = pc;
-      addLog("RTC", "Peer created");
-
-      // Create data channel
-      addLog("RTC", `Creating data channel "${WEBRTC_DATA_CHANNEL_LABEL}"…`);
-      const dc = pc.createDataChannel(WEBRTC_DATA_CHANNEL_LABEL);
-      dataChannelRef.current = dc;
-      addLog("RTC", "DataChannel created");
-
-      // DataChannel events
-      dc.onopen = () => {
-        addLog("RTC", `DataChannel OPEN (${dc.label})`);
-        addLog("RTC", "DataChannel connected!");
-
-        setStatus("Device connected, ready to stream requests");
-      };
-
-      dc.onclose = () => {
-        addLog("RTC", "DataChannel CLOSED");
-        // Re-poll when peer drops if server is still running
-        if (runningRef.current) pollOffers();
-      };
-
-      dc.onmessage = (event) => {
-        const data = typeof event.data === "string" ? event.data : "";
-        addLog("RTC", `Received: ${data.substring(0, 80)}`);
-
-        if (data.length > 0) {
-          try {
-            const chunk = JSON.parse(data) as LaylaServerTransportMessage;
-
-            if (chunk.type === "start") {
-              bufferedRequestRef.current = "";
-              sessionIdRef.current = chunk.sessionId;
-            } else if (chunk.type === "chunk") {
-              bufferedRequestRef.current += chunk.payload;
-            } else if (chunk.type === "end") {
-              // Stream the request to local llama.cpp via SSE (fetch streaming)
-              streamToLocalServer(bufferedRequestRef.current);
-            }
-          } catch (e: any) {
-            addLog("ERROR", `Failed to handle RTC message: ${e.message}`);
-          }
-        }
-      };
-
-      // ICE candidate logging
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          addLog(
-            "RTC",
-            `ICE candidate gathered: ${event.candidate.candidate.substring(0, 60)}…`,
-          );
-        }
-      };
-
-      // Connection state
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        addLog("RTC", `RTC state → ${state}`);
-        if (state === "connected") {
-          setStatus("Connected to peer");
-        } else if (state === "failed") {
-          pollOffers();
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        addLog("RTC", `ICE connection state → ${pc.iceConnectionState}`);
-      };
-
-      // Create offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      // Wait for ICE gathering to complete
-      // await new Promise<void>((resolve) => {
-      //   if (pc.iceGatheringState === "complete") {
-      //     resolve();
-      //     return;
-      //   }
-      //   pc.onicegatheringstatechange = () => {
-      //     if (pc.iceGatheringState === "complete") {
-      //       resolve();
-      //     }
-      //   };
-      //   // Timeout safety net — 10s
-      //   setTimeout(resolve, 10_000);
-      // });
-
-      const localSdp = pc.localDescription?.sdp;
-      if (!localSdp) {
-        addLog("ERROR", "Failed to create RTC offer: SDP is null");
-        return;
-      }
-
-      addLog("RTC", `Local description ready (type: offer)\n\n${localSdp}`);
-
-      // Submit offer to signaling server
-      await submitOffer(serverSecretRef.current, localSdp);
-
-      // Unlock mutex and start polling for answer
-      pollingMutexRef.current = false;
-      pollForAnswer(serverSecretRef.current);
-    } catch (e: any) {
-      addLog("ERROR", e.message);
-    }
-  };
-
   // ── SSE streaming via browser fetch ──
-
   const streamToLocalServer = useCallback(async (requestBody: string) => {
     try {
       addLog("SSE", `Streaming request to local server…`);
@@ -559,62 +418,141 @@ const LlmServerPanel: React.FC<{
     }
   }, []);
 
-  // ── Signaling ──
+  // ── WebRTC (browser native) ──
+  const createRtcOffer = async () => {
+    if (creatingRtcOfferGuardRef.current) return;
+    creatingRtcOfferGuardRef.current = true;
 
-  const submitOffer = async (secret: string, payload: string) => {
-    if (secret.length === 0) {
-      addLog("ERROR", "Cannot submit RTC offer with empty secret");
-      return;
-    }
-
-    const response = await fetch(`${LAYLA_SIGNALLING_URL}/rtc/submit-offer`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret, payload }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(
-        `Error submitting offer; status: ${response.status}, response: ${text}`,
-      );
-    }
-  };
-
-  const pollOffers = () => {
-    if (offerPollingRef.current) {
-      clearInterval(offerPollingRef.current);
-    }
-
-    const poll = async () => {
-      if (pollingMutexRef.current) return;
-      pollingMutexRef.current = true;
-      try {
-        await createRtcOffer();
-      } catch (e: any) {
-        addLog("ERROR", `Failed to poll RTC offers: ${e.message}`);
+    try {
+      // Close existing connection if any
+      if (peerConnectionRef.current) {
+        addLog("WARN", "Existing RTC peer connection found, closing…");
+        try {
+          dataChannelRef.current?.close();
+          peerConnectionRef.current.close();
+        } catch (e: any) {
+          addLog("ERROR", `Failed to close existing peer: ${e.message}`);
+        }
+        peerConnectionRef.current = null;
+        dataChannelRef.current = null;
       }
-      // mutex unlocked inside createRtcOffer after local description is ready
-    };
 
-    poll();
-    offerPollingRef.current = setInterval(poll, 30_000);
-  };
+      addLog("RTC", "Creating peer connection…");
+      setStatus("Waiting for remote connection...");
 
-  const pollForAnswer = (secret: string) => {
-    if (answerPollingRef.current) {
-      clearInterval(answerPollingRef.current);
-    }
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      peerConnectionRef.current = pc;
+      addLog("RTC", "Peer created");
 
-    answerPollingRef.current = setInterval(async () => {
-      try {
-        if (pollingMutexRef.current) return;
-        pollingMutexRef.current = true;
+      // Create data channel
+      addLog("RTC", `Creating data channel "${WEBRTC_DATA_CHANNEL_LABEL}"…`);
+      const dc = pc.createDataChannel(WEBRTC_DATA_CHANNEL_LABEL);
+      dataChannelRef.current = dc;
+      addLog("RTC", "DataChannel created");
 
+      // DataChannel events
+      dc.onopen = () => {
+        addLog("RTC", `DataChannel OPEN (${dc.label})`);
+        addLog("RTC", "DataChannel connected!");
+
+        setStatus("Device connected, ready to stream requests");
+      };
+
+      dc.onclose = () => {
+        addLog("RTC", "DataChannel CLOSED");
+
+        // re-create offer if server is still running
+        if (runningRef.current) createRtcOffer();
+      };
+
+      dc.onmessage = (event) => {
+        const data = typeof event.data === "string" ? event.data : "";
+        addLog("RTC", `Received: ${data.substring(0, 80)}`);
+
+        if (data.length > 0) {
+          try {
+            const chunk = JSON.parse(data) as LaylaServerTransportMessage;
+
+            if (chunk.type === "start") {
+              bufferedRequestRef.current = "";
+              sessionIdRef.current = chunk.sessionId;
+            } else if (chunk.type === "chunk") {
+              bufferedRequestRef.current += chunk.payload;
+            } else if (chunk.type === "end") {
+              // Stream the request to local llama.cpp via SSE (fetch streaming)
+              streamToLocalServer(bufferedRequestRef.current);
+            }
+          } catch (e: any) {
+            addLog("ERROR", `Failed to handle RTC message: ${e.message}`);
+          }
+        }
+      };
+
+      // ICE candidate logging
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          addLog(
+            "RTC",
+            `ICE candidate gathered: ${event.candidate.candidate.substring(0, 60)}…`,
+          );
+        }
+      };
+
+      // Connection state
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        addLog("RTC", `RTC state → ${state}`);
+
+        if (state === "connected") {
+          setStatus("Connected to peer");
+        } else if (state === "failed" || state === "disconnected") {
+          if (runningRef.current) createRtcOffer();
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        addLog("RTC", `ICE connection state → ${pc.iceConnectionState}`);
+      };
+
+      // Create offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Wait for ICE gathering to complete
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === "complete") {
+          resolve();
+          return;
+        }
+        pc.onicegatheringstatechange = () => {
+          if (pc.iceGatheringState === "complete") {
+            resolve();
+          }
+        };
+        // Timeout safety net — 10s
+        setTimeout(resolve, 10_000);
+      });
+
+      const localSdp = pc.localDescription?.sdp;
+      if (!localSdp) {
+        addLog("ERROR", "Failed to create RTC offer: SDP is null");
+        return;
+      }
+
+      addLog("RTC", `Local description ready (type: offer)\n\n${localSdp}`);
+
+      // start polling for answer
+      let answerReceived = false;
+      do {
         const response = await fetch(`${LAYLA_SIGNALLING_URL}/rtc/get-answer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret }),
+          body: JSON.stringify({
+            secret: serverSecretRef.current,
+            offer: localSdp,
+          }),
         });
 
         if (!response.ok) {
@@ -623,33 +561,43 @@ const LlmServerPanel: React.FC<{
             "INFO",
             `No answer yet; status: ${response.status}, response: ${text}`,
           );
-          return;
+
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
         }
 
         const data = await response.json();
 
-        if (data.secret !== secret) {
+        if (data.secret !== serverSecretRef.current) {
           addLog(
             "WARN",
             `RTC answer secret mismatch: ${data.secret}, IGNORING`,
           );
-          return;
+
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
         }
 
         const payload = data.payload as string | undefined;
         if (!payload) {
           addLog("WARN", "RTC answer with empty payload, IGNORING");
-          return;
+
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
         }
 
         if (!peerConnectionRef.current) {
           addLog("WARN", "RTC answer but no peer connection, IGNORING");
-          return;
+
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
         }
 
         if (lastAnswerRef.current === payload) {
           addLog("INFO", "Duplicate RTC answer, IGNORING");
-          return;
+
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
         }
 
         await peerConnectionRef.current.setRemoteDescription(
@@ -657,36 +605,18 @@ const LlmServerPanel: React.FC<{
         );
         addLog("RTC", "Remote answer received:\n\n" + payload);
         lastAnswerRef.current = payload;
-
-        // Stop polling once we have an answer
-        if (answerPollingRef.current) {
-          clearInterval(answerPollingRef.current);
-          answerPollingRef.current = null;
-        }
-        if (offerPollingRef.current) {
-          clearInterval(offerPollingRef.current);
-          offerPollingRef.current = null;
-        }
-      } catch (e: any) {
-        addLog("ERROR", `Failed to poll RTC answer: ${e.message}`);
-      } finally {
-        pollingMutexRef.current = false;
-      }
-    }, 5_000);
+        answerReceived = true;
+      } while (!answerReceived && runningRef.current);
+    } catch (e: any) {
+      addLog("ERROR", e.message);
+    } finally {
+      creatingRtcOfferGuardRef.current = false;
+    }
   };
 
   // ── Server lifecycle ──
 
   const shutdownServer = async () => {
-    if (offerPollingRef.current) {
-      clearInterval(offerPollingRef.current);
-      offerPollingRef.current = null;
-    }
-    if (answerPollingRef.current) {
-      clearInterval(answerPollingRef.current);
-      answerPollingRef.current = null;
-    }
-
     addLog("INFO", "Shutting down llama.cpp server…");
 
     try {
@@ -723,22 +653,22 @@ const LlmServerPanel: React.FC<{
     }
 
     runningRef.current = true;
-
-    setTimeout(() => {
-      setShowQrCode(true);
-    }, 1000);
-
-    await pollOffers();
   };
 
   const handleToggle = async () => {
     if (serverTransitioningRef.current) return;
     serverTransitioningRef.current = true;
+
+    // start llm server
     try {
       if (running) {
         await shutdownServer();
       } else {
         await startServer();
+
+        setTimeout(() => {
+          setShowQrCode(true);
+        }, 1000);
       }
     } catch (err: any) {
       addLog(
@@ -749,6 +679,9 @@ const LlmServerPanel: React.FC<{
       serverTransitioningRef.current = false;
       setStatus("");
     }
+
+    // start polling for RTC connections
+    createRtcOffer();
   };
 
   // ── Load settings ──
@@ -834,8 +767,6 @@ const LlmServerPanel: React.FC<{
     );
 
     return () => {
-      if (offerPollingRef.current) clearInterval(offerPollingRef.current);
-      if (answerPollingRef.current) clearInterval(answerPollingRef.current);
       try {
         dataChannelRef.current?.close();
         peerConnectionRef.current?.close();
