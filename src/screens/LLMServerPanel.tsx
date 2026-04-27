@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import UserSettingsService, {
+  USER_SETTING_DEFAULTS,
   UserSettingKey,
 } from "../services/user-settings-service";
 import { WelcomeModal } from "../components/WelcomeModal";
@@ -333,6 +334,7 @@ const LlmServerPanel: React.FC<{
   const visionModelPathRef = useRef<string | null>(null);
   const additionalArgsRef = useRef<string | null>(null);
   const localServerPathRef = useRef<string | null>(null);
+  const localServerUrlRef = useRef<string | null>(null);
   const [serverSecret, setServerSecret] = useState("");
   const serverSecretRef = useRef("");
 
@@ -370,7 +372,7 @@ const LlmServerPanel: React.FC<{
       addLog("SSE", `Streaming request to local server…`);
 
       const response = await fetch(
-        "http://127.0.0.1:8080/v1/chat/completions",
+        localServerUrlRef.current || USER_SETTING_DEFAULTS[UserSettingKey.LOCAL_SERVER_URL],
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -695,6 +697,7 @@ const LlmServerPanel: React.FC<{
       UserSettingKey.LOCAL_SERVER_PATH,
       UserSettingKey.SERVER_SECRET_KEY,
       UserSettingKey.VISION_MODEL_PATH,
+      UserSettingKey.LOCAL_SERVER_URL,
     ]);
 
     const mp = settings[UserSettingKey.MODEL_PATH];
@@ -702,6 +705,7 @@ const LlmServerPanel: React.FC<{
     const lsp = settings[UserSettingKey.LOCAL_SERVER_PATH];
     const vmp = settings[UserSettingKey.VISION_MODEL_PATH];
     const ssk = settings[UserSettingKey.SERVER_SECRET_KEY];
+    const lsu = settings[UserSettingKey.LOCAL_SERVER_URL];
 
     setServerSecret(ssk);
     serverSecretRef.current = ssk;
@@ -709,6 +713,7 @@ const LlmServerPanel: React.FC<{
     visionModelPathRef.current = vmp;
     additionalArgsRef.current = aa;
     localServerPathRef.current = lsp;
+    localServerUrlRef.current = lsu;
 
     if (!mp) {
       setWelcomeVisible(true);
