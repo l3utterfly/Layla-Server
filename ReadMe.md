@@ -60,7 +60,7 @@ That's it. You're now chatting with your local model from your phone.
 **Prerequisites:** Node.js 18+
 
 ```bash
-git clone https://github.com/your-org/Layla-Server.git
+git clone https://github.com/l3utterfly/Layla-Server.git
 cd Layla-Server
 npm install
 npm start
