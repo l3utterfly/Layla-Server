@@ -38,7 +38,7 @@ type LogType = "INFO" | "WARN" | "ERROR" | "RTC" | "SSE" | "SERVER";
 
 interface LaylaServerTransportMessage {
   sessionId: string;
-  type: "start" | "chunk" | "end";
+  type: "start" | "chunk" | "end" | "cmd";
   payload: string;
 }
 
@@ -344,8 +344,9 @@ const LlmServerPanel: React.FC<{
   const lastAnswerRef = useRef<string | null>(null);
   const creatingRtcOfferGuardRef = useRef(false); // to prevent concurrent offer creations
 
-  // ── Buffered request ──
+  // ── OpenAI proxy ──
   const bufferedRequestRef = useRef("");
+  const streamAbortControllerRef = useRef<AbortController | null>(null);
 
   // ── Model info ──
   const [modelName, setModelName] = useState("No model loaded");
@@ -371,12 +372,20 @@ const LlmServerPanel: React.FC<{
     try {
       addLog("SSE", `Streaming request to local server…`);
 
+      // re-create abort controller for this stream
+      if (streamAbortControllerRef.current) {
+        streamAbortControllerRef.current.abort();
+      }
+      streamAbortControllerRef.current = new AbortController();
+
       const response = await fetch(
-        localServerUrlRef.current || USER_SETTING_DEFAULTS[UserSettingKey.LOCAL_SERVER_URL],
+        localServerUrlRef.current ||
+          USER_SETTING_DEFAULTS[UserSettingKey.LOCAL_SERVER_URL],
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: requestBody,
+          signal: streamAbortControllerRef.current.signal,
         },
       );
 
@@ -417,6 +426,16 @@ const LlmServerPanel: React.FC<{
       addLog("SSE", "Stream completed");
     } catch (e: any) {
       addLog("SSE", `Stream error: ${e.message}`);
+    }
+  }, []);
+
+  const handleCommand = useCallback((cmd: string) => {
+    addLog("INFO", `Received command: ${cmd}`);
+    if (cmd === "stop") {
+      streamAbortControllerRef.current?.abort();
+      addLog("INFO", "Stream aborted by command");
+    } else {
+      addLog("WARN", `Unknown command: ${cmd}`);
     }
   }, []);
 
@@ -465,8 +484,9 @@ const LlmServerPanel: React.FC<{
       dc.onclose = () => {
         addLog("RTC", "DataChannel CLOSED");
 
-        // re-create offer if server is still running
-        if (runningRef.current) createRtcOffer();
+        // re-create offer if server is still running and we we not re-creating the rtc offer
+        if (runningRef.current && !creatingRtcOfferGuardRef.current)
+          createRtcOffer();
       };
 
       dc.onmessage = (event) => {
@@ -485,6 +505,9 @@ const LlmServerPanel: React.FC<{
             } else if (chunk.type === "end") {
               // Stream the request to local llama.cpp via SSE (fetch streaming)
               streamToLocalServer(bufferedRequestRef.current);
+            } else if (chunk.type === "cmd") {
+              // Handle command messages
+              handleCommand(chunk.payload);
             }
           } catch (e: any) {
             addLog("ERROR", `Failed to handle RTC message: ${e.message}`);
@@ -608,6 +631,39 @@ const LlmServerPanel: React.FC<{
         addLog("RTC", "Remote answer received:\n\n" + payload);
         lastAnswerRef.current = payload;
         answerReceived = true;
+
+        // Wait up to 10s for the DataChannel to open, else retry
+        if (dc.readyState !== "open") {
+          addLog("RTC", "Waiting up to 10s for DataChannel to open…");
+          const opened = await new Promise<boolean>((resolve) => {
+            const timeout = setTimeout(() => resolve(false), 10_000);
+            const origOnOpen = dc.onopen;
+            dc.onopen = (ev) => {
+              clearTimeout(timeout);
+              origOnOpen?.call(dc, ev);
+              resolve(true);
+            };
+          });
+
+          if (!opened && runningRef.current) {
+            addLog(
+              "WARN",
+              "DataChannel did not open within 10s, retrying offer…",
+            );
+            try {
+              dc.close();
+              pc.close();
+            } catch (_) {}
+
+            peerConnectionRef.current = null;
+            dataChannelRef.current = null;
+            creatingRtcOfferGuardRef.current = false;
+
+            // here we call our own function recursively to completely setup a new offer etc.
+            createRtcOffer();
+            return;
+          }
+        }
       } while (!answerReceived && runningRef.current);
     } catch (e: any) {
       addLog("ERROR", e.message);
