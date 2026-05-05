@@ -444,233 +444,330 @@ const LlmServerPanel: React.FC<{
     if (creatingRtcOfferGuardRef.current) return;
     creatingRtcOfferGuardRef.current = true;
 
+    // Abort controller for cancelling in-flight fetches on shutdown or retry
+    let abortController: AbortController | null = null;
+
     try {
-      // Close existing connection if any
-      if (peerConnectionRef.current) {
-        addLog("WARN", "Existing RTC peer connection found, closing…");
+      // Outer loop: each iteration creates a fresh offer + polls for an answer
+      while (runningRef.current) {
+        abortController = new AbortController();
+        const { signal } = abortController;
+
+        let pc: RTCPeerConnection | null = null;
+        let dc: RTCDataChannel | null = null;
+
         try {
-          dataChannelRef.current?.close();
-          peerConnectionRef.current.close();
-        } catch (e: any) {
-          addLog("ERROR", `Failed to close existing peer: ${e.message}`);
-        }
-        peerConnectionRef.current = null;
-        dataChannelRef.current = null;
-      }
-
-      addLog("RTC", "Creating peer connection…");
-      setStatus("Waiting for remote connection...");
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
-      peerConnectionRef.current = pc;
-      addLog("RTC", "Peer created");
-
-      // Create data channel
-      addLog("RTC", `Creating data channel "${WEBRTC_DATA_CHANNEL_LABEL}"…`);
-      const dc = pc.createDataChannel(WEBRTC_DATA_CHANNEL_LABEL);
-      dataChannelRef.current = dc;
-      addLog("RTC", "DataChannel created");
-
-      // DataChannel events
-      dc.onopen = () => {
-        addLog("RTC", `DataChannel OPEN (${dc.label})`);
-        addLog("RTC", "DataChannel connected!");
-
-        setStatus("Device connected, ready to stream requests");
-      };
-
-      dc.onclose = () => {
-        addLog("RTC", "DataChannel CLOSED");
-
-        // re-create offer if server is still running and we we not re-creating the rtc offer
-        if (runningRef.current && !creatingRtcOfferGuardRef.current)
-          createRtcOffer();
-      };
-
-      dc.onmessage = (event) => {
-        const data = typeof event.data === "string" ? event.data : "";
-        addLog("RTC", `Received: ${data.substring(0, 80)}`);
-
-        if (data.length > 0) {
-          try {
-            const chunk = JSON.parse(data) as LaylaServerTransportMessage;
-
-            if (chunk.type === "start") {
-              bufferedRequestRef.current = "";
-              sessionIdRef.current = chunk.sessionId;
-            } else if (chunk.type === "chunk") {
-              bufferedRequestRef.current += chunk.payload;
-            } else if (chunk.type === "end") {
-              // Stream the request to local llama.cpp via SSE (fetch streaming)
-              streamToLocalServer(bufferedRequestRef.current);
-            } else if (chunk.type === "cmd") {
-              // Handle command messages
-              handleCommand(chunk.payload);
-            }
-          } catch (e: any) {
-            addLog("ERROR", `Failed to handle RTC message: ${e.message}`);
-          }
-        }
-      };
-
-      // ICE candidate logging
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          addLog(
-            "RTC",
-            `ICE candidate gathered: ${event.candidate.candidate.substring(0, 60)}…`,
-          );
-        }
-      };
-
-      // Connection state
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        addLog("RTC", `RTC state → ${state}`);
-
-        if (state === "connected") {
-          setStatus("Connected to peer");
-        } else if (state === "failed" || state === "disconnected") {
-          if (runningRef.current) createRtcOffer();
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        addLog("RTC", `ICE connection state → ${pc.iceConnectionState}`);
-      };
-
-      // Create offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      // Wait for ICE gathering to complete
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === "complete") {
-          resolve();
-          return;
-        }
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === "complete") {
-            resolve();
-          }
-        };
-        // Timeout safety net — 10s
-        setTimeout(resolve, 10_000);
-      });
-
-      const localSdp = pc.localDescription?.sdp;
-      if (!localSdp) {
-        addLog("ERROR", "Failed to create RTC offer: SDP is null");
-        return;
-      }
-
-      addLog("RTC", `Local description ready (type: offer)\n\n${localSdp}`);
-
-      // start polling for answer
-      let answerReceived = false;
-      do {
-        const response = await fetch(`${LAYLA_SIGNALLING_URL}/rtc/get-answer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            secret: serverSecretRef.current,
-            offer: localSdp,
-          }),
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          addLog(
-            "INFO",
-            `No answer yet; status: ${response.status}, response: ${text}`,
-          );
-
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        const data = await response.json();
-
-        if (data.secret !== serverSecretRef.current) {
-          addLog(
-            "WARN",
-            `RTC answer secret mismatch: ${data.secret}, IGNORING`,
-          );
-
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        const payload = data.payload as string | undefined;
-        if (!payload) {
-          addLog("WARN", "RTC answer with empty payload, IGNORING");
-
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        if (!peerConnectionRef.current) {
-          addLog("WARN", "RTC answer but no peer connection, IGNORING");
-
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        if (lastAnswerRef.current === payload) {
-          addLog("INFO", "Duplicate RTC answer, IGNORING");
-
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        await peerConnectionRef.current.setRemoteDescription(
-          new RTCSessionDescription({ type: "answer", sdp: payload }),
-        );
-        addLog("RTC", "Remote answer received:\n\n" + payload);
-        lastAnswerRef.current = payload;
-        answerReceived = true;
-
-        // Wait up to 10s for the DataChannel to open, else retry
-        if (dc.readyState !== "open") {
-          addLog("RTC", "Waiting up to 10s for DataChannel to open…");
-          const opened = await new Promise<boolean>((resolve) => {
-            const timeout = setTimeout(() => resolve(false), 10_000);
-            const origOnOpen = dc.onopen;
-            dc.onopen = (ev) => {
-              clearTimeout(timeout);
-              origOnOpen?.call(dc, ev);
-              resolve(true);
-            };
-          });
-
-          if (!opened && runningRef.current) {
-            addLog(
-              "WARN",
-              "DataChannel did not open within 10s, retrying offer…",
-            );
+          // ── Tear down any previous connection ──────────────────────────
+          if (peerConnectionRef.current) {
+            addLog("WARN", "Existing RTC peer connection found, closing…");
             try {
-              dc.close();
-              pc.close();
-            } catch (_) {}
-
+              dataChannelRef.current?.close();
+              peerConnectionRef.current.close();
+            } catch (e: any) {
+              addLog("ERROR", `Failed to close existing peer: ${e.message}`);
+            }
             peerConnectionRef.current = null;
             dataChannelRef.current = null;
-            creatingRtcOfferGuardRef.current = false;
-
-            // here we call our own function recursively to completely setup a new offer etc.
-            createRtcOffer();
-            return;
           }
+
+          // ── Create peer connection ────────────────────────────────────
+          addLog("RTC", "Creating peer connection…");
+          setStatus("Waiting for remote connection...");
+
+          pc = new RTCPeerConnection({
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+            ],
+          });
+          peerConnectionRef.current = pc;
+          addLog("RTC", "Peer created");
+
+          // ── Create data channel ───────────────────────────────────────
+          addLog(
+            "RTC",
+            `Creating data channel "${WEBRTC_DATA_CHANNEL_LABEL}"…`,
+          );
+          dc = pc.createDataChannel(WEBRTC_DATA_CHANNEL_LABEL);
+          dataChannelRef.current = dc;
+          addLog("RTC", "DataChannel created");
+
+          // ── DataChannel events ────────────────────────────────────────
+          dc.onopen = () => {
+            addLog("RTC", `DataChannel OPEN (${dc!.label})`);
+            setStatus("Device connected, ready to stream requests");
+          };
+
+          dc.onclose = () => {
+            addLog("RTC", "DataChannel CLOSED");
+            // Abort the current polling fetch so the outer loop can
+            // immediately start a fresh offer.
+            abortController?.abort();
+          };
+
+          dc.onmessage = (event) => {
+            const data = typeof event.data === "string" ? event.data : "";
+
+            if (typeof event.data !== "string") {
+              addLog(
+                "WARN",
+                `Received unexpected binary message (${(event.data as ArrayBuffer).byteLength} bytes), ignoring`,
+              );
+              return;
+            }
+
+            addLog("RTC", `Received: ${data.substring(0, 80)}`);
+
+            if (data.length > 0) {
+              try {
+                const chunk = JSON.parse(data) as LaylaServerTransportMessage;
+
+                if (chunk.type === "start") {
+                  bufferedRequestRef.current = "";
+                  sessionIdRef.current = chunk.sessionId;
+                } else if (chunk.type === "chunk") {
+                  bufferedRequestRef.current += chunk.payload;
+                } else if (chunk.type === "end") {
+                  streamToLocalServer(bufferedRequestRef.current);
+                } else if (chunk.type === "cmd") {
+                  handleCommand(chunk.payload);
+                }
+              } catch (e: any) {
+                addLog("ERROR", `Failed to handle RTC message: ${e.message}`);
+              }
+            }
+          };
+
+          // ── ICE / connection state logging ────────────────────────────
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              addLog(
+                "RTC",
+                `ICE candidate gathered: ${event.candidate.candidate.substring(0, 60)}…`,
+              );
+            }
+          };
+
+          pc.onconnectionstatechange = () => {
+            const state = pc!.connectionState;
+            addLog("RTC", `RTC state → ${state}`);
+
+            if (state === "connected") {
+              setStatus("Connected to peer");
+            } else if (state === "failed" || state === "disconnected") {
+              // Abort the current polling fetch so the outer loop retries.
+              abortController?.abort();
+            }
+          };
+
+          pc.oniceconnectionstatechange = () => {
+            addLog("RTC", `ICE connection state → ${pc!.iceConnectionState}`);
+          };
+
+          // ── Create & gather offer ─────────────────────────────────────
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          await new Promise<void>((resolve) => {
+            if (pc!.iceGatheringState === "complete") {
+              resolve();
+              return;
+            }
+            pc!.onicegatheringstatechange = () => {
+              if (pc!.iceGatheringState === "complete") resolve();
+            };
+            setTimeout(resolve, 10_000);
+          });
+
+          const localSdp = pc.localDescription?.sdp;
+          if (!localSdp) {
+            addLog("ERROR", "Failed to create RTC offer: SDP is null");
+            continue; // retry with a fresh connection
+          }
+
+          addLog("RTC", `Local description ready (type: offer)\n\n${localSdp}`);
+
+          // ── Poll for answer ───────────────────────────────────────────
+          let answerReceived = false;
+
+          while (!answerReceived && runningRef.current) {
+            // Check abort before each iteration (dc.onclose or state change
+            // may have fired between iterations).
+            if (signal.aborted) break;
+
+            let response: Response;
+            try {
+              response = await fetch(`${LAYLA_SIGNALLING_URL}/rtc/get-answer`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  secret: serverSecretRef.current,
+                  offer: localSdp,
+                }),
+                signal,
+              });
+            } catch (e: any) {
+              if (e.name === "AbortError") break; // expected on shutdown / retry
+              addLog("ERROR", `Fetch error: ${e.message}`);
+              await sleep(5000, signal);
+              continue;
+            }
+
+            if (!response.ok) {
+              const text = await response.text();
+              addLog(
+                "INFO",
+                `No answer yet; status: ${response.status}, response: ${text}`,
+              );
+              await sleep(5000, signal);
+              continue;
+            }
+
+            const data = await response.json();
+
+            if (data.secret !== serverSecretRef.current) {
+              addLog(
+                "WARN",
+                `RTC answer secret mismatch: ${data.secret}, IGNORING`,
+              );
+              await sleep(5000, signal);
+              continue;
+            }
+
+            const payload = data.payload as string | undefined;
+            if (!payload) {
+              addLog("WARN", "RTC answer with empty payload, IGNORING");
+              await sleep(5000, signal);
+              continue;
+            }
+
+            if (!peerConnectionRef.current) {
+              addLog("WARN", "RTC answer but no peer connection, IGNORING");
+              break; // connection was torn down — restart outer loop
+            }
+
+            if (lastAnswerRef.current === payload) {
+              addLog("INFO", "Duplicate RTC answer, IGNORING");
+              await sleep(5000, signal);
+              continue;
+            }
+
+            // ── Apply remote answer ───────────────────────────────────
+            await peerConnectionRef.current.setRemoteDescription(
+              new RTCSessionDescription({ type: "answer", sdp: payload }),
+            );
+            addLog("RTC", "Remote answer received:\n\n" + payload);
+            lastAnswerRef.current = payload;
+
+            // ── Wait for DataChannel to open ──────────────────────────
+            if (dc.readyState !== "open") {
+              addLog("RTC", "Waiting up to 10s for DataChannel to open…");
+
+              const opened = await waitForDataChannelOpen(dc, 10_000);
+
+              if (!opened && runningRef.current) {
+                addLog(
+                  "WARN",
+                  "DataChannel did not open within 10s, retrying offer…",
+                );
+                break; // clean up happens in the inner finally, outer loop retries
+              }
+            }
+
+            answerReceived = true;
+          }
+
+          // If we got a connection, wait here until something breaks it.
+          // The dc.onclose / onconnectionstatechange handlers abort the
+          // controller, so we just await that signal.
+          if (answerReceived && runningRef.current) {
+            await new Promise<void>((resolve) => {
+              if (signal.aborted) {
+                resolve();
+                return;
+              }
+              signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+            addLog("RTC", "Connection ended, will retry…");
+          }
+        } catch (e: any) {
+          if (e.name === "AbortError") {
+            addLog("RTC", "Aborted, will retry…");
+          } else {
+            addLog("ERROR", e.message);
+          }
+        } finally {
+          // ── Per-iteration cleanup: tear down this attempt's resources ──
+          try {
+            dc?.close();
+          } catch (_) {}
+          try {
+            pc?.close();
+          } catch (_) {}
+
+          if (peerConnectionRef.current === pc)
+            peerConnectionRef.current = null;
+          if (dataChannelRef.current === dc) dataChannelRef.current = null;
         }
-      } while (!answerReceived && runningRef.current);
-    } catch (e: any) {
-      addLog("ERROR", e.message);
+
+        // Brief pause before the next attempt to avoid a tight spin
+        // if creation keeps failing immediately.
+        if (runningRef.current) {
+          await sleep(1000);
+        }
+      }
     } finally {
       creatingRtcOfferGuardRef.current = false;
     }
   };
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /** Sleep that can be cancelled via an AbortSignal. */
+  const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+    new Promise((resolve) => {
+      if (signal?.aborted) {
+        resolve();
+        return;
+      }
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+
+  /** Wait for a DataChannel to reach "open" state, with a timeout. */
+  const waitForDataChannelOpen = (
+    dc: RTCDataChannel,
+    timeoutMs: number,
+  ): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (dc.readyState === "open") {
+        resolve(true);
+        return;
+      }
+
+      const abortCtrl = new AbortController();
+
+      const timer = setTimeout(() => {
+        abortCtrl.abort();
+        resolve(false);
+      }, timeoutMs);
+
+      dc.addEventListener(
+        "open",
+        () => {
+          clearTimeout(timer);
+          resolve(true);
+        },
+        { once: true, signal: abortCtrl.signal },
+      );
+    });
 
   // ── Server lifecycle ──
 
