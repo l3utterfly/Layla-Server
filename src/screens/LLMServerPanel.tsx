@@ -31,6 +31,9 @@ const LAYLA_SIGNALLING_URL =
 const WEBRTC_DATA_CHANNEL_LABEL = "layla-datachannel";
 const CHUNK_SIZE = 16_000;
 const MAX_SERVER_LOGS_TO_DISPLAY = 500;
+// start - micfogas: patch for issue 1
+const MAX_BUFFER_SIZE = 2 * 1024 * 1024; // 2MB approximate size limit
+// end - micfogas: patch for issue 1
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -345,7 +348,9 @@ const LlmServerPanel: React.FC<{
   const creatingRtcOfferGuardRef = useRef(false); // to prevent concurrent offer creations
 
   // ── OpenAI proxy ──
-  const bufferedRequestRef = useRef("");
+  // start - micfogas: patch for issue 2
+  const requestBuffersRef = useRef<Map<string, string>>(new Map());
+  // end - micfogas: patch for issue 2
   const streamAbortControllerRef = useRef<AbortController | null>(null);
 
   // ── Model info ──
@@ -368,7 +373,9 @@ const LlmServerPanel: React.FC<{
   };
 
   // ── SSE streaming via browser fetch ──
-  const streamToLocalServer = useCallback(async (requestBody: string) => {
+  // start - micfogas: patch for issue 2
+  const streamToLocalServer = useCallback(async (requestBody: string, sessionId: string) => {
+  // end - micfogas: patch for issue 2
     try {
       addLog("SSE", `Streaming request to local server…`);
 
@@ -407,7 +414,9 @@ const LlmServerPanel: React.FC<{
         addLog("SSE", `Stream chunk:\n${chunkText}`);
 
         // Forward chunk to peer via data channel
-        const sid = sessionIdRef.current ?? "unknown";
+        // start - micfogas: patch for issue 2
+        const sid = sessionId;
+        // end - micfogas: patch for issue 2
         const messages = wrapMessages(sid, chunkText);
         for (const msg of messages) {
           if (
@@ -500,6 +509,9 @@ const LlmServerPanel: React.FC<{
 
           dc.onclose = () => {
             addLog("RTC", "DataChannel CLOSED");
+            // start - micfogas: patch for issue 3
+            streamAbortControllerRef.current?.abort();
+            // end - micfogas: patch for issue 3
             // Abort the current polling fetch so the outer loop can
             // immediately start a fresh offer.
             abortController?.abort();
@@ -522,14 +534,39 @@ const LlmServerPanel: React.FC<{
               try {
                 const chunk = JSON.parse(data) as LaylaServerTransportMessage;
 
-                if (chunk.type === "start") {
-                  bufferedRequestRef.current = "";
-                  sessionIdRef.current = chunk.sessionId;
-                } else if (chunk.type === "chunk") {
-                  bufferedRequestRef.current += chunk.payload;
-                } else if (chunk.type === "end") {
-                  streamToLocalServer(bufferedRequestRef.current);
-                } else if (chunk.type === "cmd") {
+              if (chunk.type === "start") {
+                // start - micfogas: patch for issue 2
+                requestBuffersRef.current.set(chunk.sessionId, "");
+                // end - micfogas: patch for issue 2
+                sessionIdRef.current = chunk.sessionId;
+              } else if (chunk.type === "chunk") {
+                // start - micfogas: patch for issue 1 & 2
+                let currentBuffer = requestBuffersRef.current.get(chunk.sessionId) || "";
+                currentBuffer += chunk.payload;
+                
+                if (currentBuffer.length > MAX_BUFFER_SIZE) {
+                  addLog("ERROR", `Buffer overflow for session ${chunk.sessionId}`);
+                  requestBuffersRef.current.delete(chunk.sessionId);
+                  dc?.close();
+                  return;
+                }
+                
+                requestBuffersRef.current.set(chunk.sessionId, currentBuffer);
+                // end - micfogas: patch for issue 1 & 2
+              } else if (chunk.type === "end") {
+                // start - micfogas: patch for issue 2 & 4
+                const finalPayload = requestBuffersRef.current.get(chunk.sessionId) || "";
+                requestBuffersRef.current.delete(chunk.sessionId);
+                
+                try {
+                  JSON.parse(finalPayload);
+                  streamToLocalServer(finalPayload, chunk.sessionId);
+                } catch (e) {
+                  addLog("ERROR", "Invalid JSON payload received");
+                  dc?.send(JSON.stringify({ sessionId: chunk.sessionId, type: "error", payload: "Invalid JSON" }));
+                }
+                // end - micfogas: patch for issue 2 & 4
+              } else if (chunk.type === "cmd") {
                   handleCommand(chunk.payload);
                 }
               } catch (e: any) {
@@ -555,6 +592,9 @@ const LlmServerPanel: React.FC<{
             if (state === "connected") {
               setStatus("Connected to peer");
             } else if (state === "failed" || state === "disconnected") {
+              // start - micfogas: patch for issue 3
+              streamAbortControllerRef.current?.abort();
+              // end - micfogas: patch for issue 3
               // Abort the current polling fetch so the outer loop retries.
               abortController?.abort();
             }
