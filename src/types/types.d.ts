@@ -1,4 +1,5 @@
 export interface ElectronAPI {
+  generateCryptoSecret: () => Promise<string>;
   getAppVersion: () => Promise<string>;
   openExternal: (url: string) => void;
   openFileDialog: () => Promise<string | null>;

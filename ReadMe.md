@@ -87,6 +87,16 @@ All settings are available in the **Settings** panel of the Layla Server UI.
 
 Layla Server proxies to any OpenAI-compatible endpoint. To use a different inference engine (LM Studio, Ollama, vLLM, etc.), just point the backend URL to it in Settings — no other changes needed.
 
+### Choosing a Secret Generator
+
+In Settings, **Secret Generator** offers the original 16-character alphanumeric
+`Math.random()` secrets (the default) or secure 64-character hex secrets from
+Node's `node:crypto`, accessed through Electron's preload bridge.
+`Math.random()` is not cryptographically secure. Choosing a generator preserves
+your current secret. Click **Generate New Secret**, then **Save** to replace it,
+or enter your own secret in **Server Secret Key**. Restart the server and scan
+the QR code again to test pairing with the saved secret.
+
 ---
 
 ## Using Your Own Models

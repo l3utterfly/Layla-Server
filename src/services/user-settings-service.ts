@@ -1,6 +1,19 @@
-function generatePassword(length: number = 16): string {
+export type SecretGenerationMethod = "crypto-hex" | "math-random";
+
+function generateLegacySecretKey(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return Array.from(
+    { length: 16 },
+    () => chars[Math.floor(Math.random() * chars.length)],
+  ).join("");
+}
+
+export async function generateSecretKey(
+  method: SecretGenerationMethod = "math-random",
+): Promise<string> {
+  if (method === "math-random") return generateLegacySecretKey();
+  // Keep the existing stored option value while using Node crypto via IPC.
+  return window.electronBridge.generateCryptoSecret();
 }
 
 export enum UserSettingKey {
@@ -10,6 +23,7 @@ export enum UserSettingKey {
   LOCAL_SERVER_PATH = 'local-server-path',
   ADDITIONAL_SERVER_CMD_ARGS = 'additional-server-cmd-args',
   SERVER_SECRET_KEY = 'server-secret-key',
+  SECRET_GENERATION_METHOD = 'secret-generation-method',
   VERBOSE_SSE_LOGGING = 'verbose-sse-logging',
 }
 
@@ -20,6 +34,7 @@ type UserSettingDefaults = {
   [UserSettingKey.LOCAL_SERVER_PATH]: string;
   [UserSettingKey.ADDITIONAL_SERVER_CMD_ARGS]: string | null;
   [UserSettingKey.SERVER_SECRET_KEY]: string;
+  [UserSettingKey.SECRET_GENERATION_METHOD]: SecretGenerationMethod;
   [UserSettingKey.VERBOSE_SSE_LOGGING]: boolean;
 };
 
@@ -31,7 +46,8 @@ export const USER_SETTING_DEFAULTS: {
   [UserSettingKey.VISION_MODEL_PATH]: null,
   [UserSettingKey.LOCAL_SERVER_PATH]: './resources/server/llama-server.exe',
   [UserSettingKey.ADDITIONAL_SERVER_CMD_ARGS]: null,
-  [UserSettingKey.SERVER_SECRET_KEY]: generatePassword(),
+  [UserSettingKey.SERVER_SECRET_KEY]: generateLegacySecretKey(),
+  [UserSettingKey.SECRET_GENERATION_METHOD]: "math-random",
   // Logging every SSE chunk drives a React state update per token. Sustained,
   // that grows renderer memory by hundreds of MB per long generation, so it is
   // opt-in and intended only for debugging a stream.

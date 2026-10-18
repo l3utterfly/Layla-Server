@@ -1663,6 +1663,10 @@ const cssStyles = `
   user-select: text;
   font-family: 'Cascadia Mono', 'Fira Code', monospace;
   letter-spacing: 1px;
+  /* Wrap long secrets at 16 chars per line (a 64-char hex secret shows as
+     4 rows): 16 glyphs + 16px letter-spacing + 20px padding, with 0.5ch slack. */
+  overflow-wrap: anywhere;
+  max-width: calc(16.5ch + 36px);
 }
 .modal-hint {
   color: ${C.secondaryText};

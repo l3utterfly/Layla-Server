@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from "electron";
 import * as path from "path";
 import os from 'os';
+import { randomBytes } from "node:crypto";
 import { spawn, exec, ChildProcess } from "child_process";
 
 let mainWindow: BrowserWindow | null = null;
+ipcMain.handle("secret:generate-crypto", () => randomBytes(32).toString("hex"));
 const isWindows = process.platform === "win32";
 
 

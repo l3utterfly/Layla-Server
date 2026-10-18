@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import UserSettingsService, {
   UserSettingKey,
   USER_SETTING_DEFAULTS,
+  generateSecretKey,
+  SecretGenerationMethod,
 } from "../services/user-settings-service";
 
 // ─── Theme ──────────────────────────────────────────────────────────────────────
@@ -28,7 +30,8 @@ interface SettingMeta {
   key: UserSettingKey;
   label: string;
   description: string;
-  type: "text" | "file";
+  type: "text" | "file" | "select";
+  options?: { value: string; label: string }[];
   placeholder?: string;
   tag?: string;
 }
@@ -69,9 +72,28 @@ const SETTING_SECTIONS: {
         tag: "CLI",
       },
       {
+        key: UserSettingKey.SECRET_GENERATION_METHOD,
+        label: "Secret Generator",
+        description:
+          "Choose how new secrets are generated. Changing this option keeps your current secret. Math.random() is not cryptographically secure.",
+        type: "select",
+        options: [
+          {
+            value: "crypto-hex",
+            label: "Node crypto — 64-character hex",
+          },
+          {
+            value: "math-random",
+            label: "Math.random() — 16-character secret (default)",
+          },
+        ],
+        tag: "SECRET",
+      },
+      {
         key: UserSettingKey.SERVER_SECRET_KEY,
         label: "Server Secret Key",
-        description: "Secret key used to authenticate with the server.",
+        description:
+          "Enter a secret or generate one below, then Save. After saving a new secret, stop and start the server and scan the QR code again to test fresh pairing.",
         type: "text",
         placeholder: "Enter your server secret key",
         tag: "SECRET",
@@ -547,6 +569,7 @@ interface SettingRowProps {
   value: string;
   onChange: (key: UserSettingKey, value: string) => void;
   onClear: (key: UserSettingKey) => void;
+  onGenerate?: () => void;
 }
 
 const SettingRow: React.FC<SettingRowProps> = ({
@@ -554,6 +577,7 @@ const SettingRow: React.FC<SettingRowProps> = ({
   value,
   onChange,
   onClear,
+  onGenerate,
 }) => {
   const [focused, setFocused] = useState(false);
   const defaultValue = USER_SETTING_DEFAULTS[meta.key];
@@ -588,9 +612,25 @@ const SettingRow: React.FC<SettingRowProps> = ({
 
       <div className="sp-setting-desc">{meta.description}</div>
 
-      {meta.type === "text" ? (
+      {meta.type === "select" ? (
+        <select
+          className="sp-input"
+          aria-label={meta.label}
+          value={value}
+          onChange={(e) => onChange(meta.key, e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        >
+          {meta.options?.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : meta.type === "text" ? (
         <input
           className="sp-input"
+          aria-label={meta.label}
           value={value}
           onChange={(e) => onChange(meta.key, e.target.value)}
           placeholder={meta.placeholder ?? ""}
@@ -614,6 +654,15 @@ const SettingRow: React.FC<SettingRowProps> = ({
             spellCheck={false}
           />
           <Btn label="Browse" onPress={pickFile} variant="outline" />
+        </div>
+      )}
+      {onGenerate && (
+        <div style={{ marginTop: 10 }}>
+          <Btn
+            label="Generate New Secret"
+            onPress={onGenerate}
+            variant="outline"
+          />
         </div>
       )}
     </div>
@@ -713,6 +762,19 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     [handleChange],
   );
 
+  const handleGenerateSecret = useCallback(async () => {
+    if (!settings) return;
+    try {
+      const method = settings[
+        UserSettingKey.SECRET_GENERATION_METHOD
+      ] as SecretGenerationMethod;
+      const secret = await generateSecretKey(method);
+      handleChange(UserSettingKey.SERVER_SECRET_KEY, secret);
+    } catch {
+      showToast("Failed to generate secret. Your current secret was kept.");
+    }
+  }, [settings, handleChange, showToast]);
+
   const handleSave = useCallback(async () => {
     if (!settings) return;
     setSaving(true);
@@ -799,6 +861,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                     value={settings[item.key] ?? ""}
                     onChange={handleChange}
                     onClear={handleClear}
+                    onGenerate={
+                      item.key === UserSettingKey.SERVER_SECRET_KEY
+                        ? handleGenerateSecret
+                        : undefined
+                    }
                   />
                 </React.Fragment>
               ))}
