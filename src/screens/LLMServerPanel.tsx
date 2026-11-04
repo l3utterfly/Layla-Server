@@ -1175,11 +1175,30 @@ const LlmServerPanel: React.FC<{
   // ── Init ──
 
   useEffect(() => {
-    loadSettings().catch((e) =>
-      addLog("ERROR", `Failed to load settings: ${e.message}`),
-    );
+    let cancelled = false;
+
+    const init = async () => {
+      // Settings must be loaded first: startServer() reads the refs it fills.
+      await loadSettings();
+
+      const { autoStart } = await window.electronBridge.getLaunchArgs();
+      if (!autoStart || cancelled) return;
+
+      // A server executable with no model means first-run setup is still
+      // pending (the welcome modal is showing), so there is nothing to start.
+      if (localServerPathRef.current?.trim() && !modelPathRef.current) {
+        addLog("WARN", "--auto-start ignored: no model is configured yet");
+        return;
+      }
+
+      addLog("INFO", "--auto-start: starting server");
+      await handleToggle();
+    };
+
+    init().catch((e) => addLog("ERROR", `Failed to initialise: ${e.message}`));
 
     return () => {
+      cancelled = true;
       try {
         dataChannelRef.current?.close();
         peerConnectionRef.current?.close();

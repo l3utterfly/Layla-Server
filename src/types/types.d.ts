@@ -1,6 +1,7 @@
 export interface ElectronAPI {
   getAppVersion: () => Promise<string>;
   openExternal: (url: string) => void;
+  getLaunchArgs: () => Promise<{ autoStart: boolean }>;
   openFileDialog: () => Promise<string | null>;
   startServer: (serverPath: string, modelPath: string, visionModelPath: string, additionalArgs: string) => Promise<void>;
   stopServer: () => Promise<void>;

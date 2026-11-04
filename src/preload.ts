@@ -5,6 +5,11 @@ contextBridge.exposeInMainWorld("electronBridge", {
     openExternal: (url: string) => ipcRenderer.send("open-external", url),
 
     /**
+     * Command-line flags the app was launched with (e.g. --auto-start).
+     */
+    getLaunchArgs: (): Promise<{ autoStart: boolean }> => ipcRenderer.invoke("app:launch-args"),
+
+    /**
      * Start the llama.cpp server process.
      */
     startServer: (

@@ -6,6 +6,19 @@ import { spawn, exec, ChildProcess } from "child_process";
 let mainWindow: BrowserWindow | null = null;
 const isWindows = process.platform === "win32";
 
+// ── Command-line arguments ─────────────────────────────────────────────────────
+// Packaged: argv is [exe, ...args]. Dev (`electron .`): argv is [electron, ".", ...args].
+const cliArgs = process.argv.slice(app.isPackaged ? 1 : 2);
+
+export interface LaunchArgs {
+  /** Start the server (and begin accepting connections) as soon as the app opens. */
+  autoStart: boolean;
+}
+
+const launchArgs: LaunchArgs = {
+  autoStart: cliArgs.includes("--auto-start"),
+};
+
 
 function createWindow(): void {
   Menu.setApplicationMenu(null);
@@ -50,6 +63,10 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("get-app-version", () => {
   return app.getVersion();
+});
+
+ipcMain.handle("app:launch-args", (): LaunchArgs => {
+  return launchArgs;
 });
 
 ipcMain.handle('device:name', () => {

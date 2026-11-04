@@ -83,6 +83,20 @@ All settings are available in the **Settings** panel of the Layla Server UI.
 | **Inference backend** | URL of any OpenAI-compatible server (default: bundled `llama-server`) |
 | **Additional Cmd Args** | Additional command-line arguments to pass to the server executable |
 
+### Command-Line Arguments
+
+| Argument | Description |
+|---|---|
+| `--auto-start` | Start the server as soon as the app opens, as if you had pressed the power button. Ignored if no model has been configured yet. |
+
+For example, add it to the target of a desktop or Startup-folder shortcut:
+
+```
+"C:\Program Files\Layla Server\Layla Server.exe" --auto-start
+```
+
+When running from source: `npx electron . --auto-start` (after `npm run build`).
+
 ### Using a Custom Backend
 
 Layla Server proxies to any OpenAI-compatible endpoint. To use a different inference engine (LM Studio, Ollama, vLLM, etc.), just point the backend URL to it in Settings — no other changes needed.
