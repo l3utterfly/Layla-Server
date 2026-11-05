@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("electronBridge", {
+    generateCryptoSecret: (): Promise<string> => ipcRenderer.invoke("secret:generate-crypto"),
     getAppVersion: (): Promise<string> => ipcRenderer.invoke("get-app-version"),
     openExternal: (url: string) => ipcRenderer.send("open-external", url),
 
